@@ -69,3 +69,70 @@ run them separately.
 A script called `build_examples.sh` is provided to help you to build the example
 GUI projects in this container.
 
+
+## Helper Scripts
+
+For a streamlined Docker workflow without touching your host toolchain, use the helper scripts included in `scripts/`.
+
+- Windows PowerShell
+  - Build image (CPU ORT): `scripts/build_docker.ps1 -Command build -Tag jaxie:latest`
+  - Build image (CUDA ORT x64): `scripts/build_docker.ps1 -Command build -Tag jaxie:latest -Cuda`
+  - Run shell: `scripts/build_docker.ps1 -Command run -Tag jaxie:latest`
+  - Run shell with GPU: `scripts/build_docker.ps1 -Command run -Tag jaxie:latest -Cuda`
+  - Configure (Release + Ninja): `scripts/build_docker.ps1 -Command config -Tag jaxie:latest`
+  - Enable miniaudio at configure: `scripts/build_docker.ps1 -Command config -Tag jaxie:latest -Miniaudio`
+  - Build: `scripts/build_docker.ps1 -Command buildonly -Tag jaxie:latest`
+  - Test: `scripts/build_docker.ps1 -Command test -Tag jaxie:latest`
+
+- Bash (Linux/macOS)
+  - Build image (CPU ORT): `scripts/build_docker.sh build --tag jaxie:latest`
+  - Build image (CUDA ORT x64): `scripts/build_docker.sh build --tag jaxie:latest --cuda`
+  - Build image (Jetson L4T aarch64): `scripts/build_docker.sh build --tag jaxie:jetson --jetson`
+  - Run shell: `scripts/build_docker.sh run --tag jaxie:latest`
+  - Run shell with GPU: `scripts/build_docker.sh run --tag jaxie:latest --cuda`
+  - Run Jetson shell with GPU: `scripts/build_docker.sh run --tag jaxie:jetson --jetson`
+  - Configure (Release + Ninja): `scripts/build_docker.sh config --tag jaxie:latest`
+  - Enable miniaudio at configure: `scripts/build_docker.sh config --tag jaxie:latest --miniaudio`
+  - Build: `scripts/build_docker.sh buildonly --tag jaxie:latest`
+  - Test: `scripts/build_docker.sh test --tag jaxie:latest`
+
+Both scripts mount the repository at `/starter_project` in the container and run CMake/ctest inside the container, keeping your host IDE configuration unaffected.
+
+Notes for CUDA builds:
+- Requires NVIDIA Container Toolkit on the host and `--gpus all` to run.
+- Default CUDA build targets x64 with ORT GPU package; Jetson (aarch64) builds typically use TensorRT or a custom ORT build. The Jetson image uses aarch64 CPU ORT by default; TensorRT/ORT GPU can be added later.
+
+## Jetson Notes
+
+### Audio Devices (ALSA/Pulse)
+- To access microphones on the host from inside the container, pass devices and group:
+  - ALSA: add `--device /dev/snd` and `--group-add audio` to `docker run`.
+  - PulseAudio: export `PULSE_SERVER` and mount the socket, e.g.:
+    - `-e PULSE_SERVER=unix:/run/user/1000/pulse/native -v /run/user/1000/pulse:/run/user/1000/pulse`
+- Example (Bash):
+  - `docker run -it --rm --gpus all --device /dev/snd --group-add audio \`
+    `-e PULSE_SERVER=unix:/run/user/1000/pulse/native \`
+    `-v /run/user/1000/pulse:/run/user/1000/pulse \`
+    `-v "$(pwd):/starter_project" jaxie:jetson`
+
+Miniaudio will use ALSA or Pulse backends; at least ALSA runtime (`libasound2`) is installed in the image.
+
+### TensorRT EP for RNNT on Jetson
+- ORT CPU is installed by default in the Jetson image. To use TensorRT EP (and/or CUDA EP), you typically need an ONNX Runtime build that enables TensorRT against JetPack’s libraries.
+- Inside the Jetson container, use the helper to build ORT with TensorRT EP:
+  - `bash scripts/build_onnxruntime_trt_jetson.sh --version v1.18.0`
+  - This installs to `/opt/onnxruntime-trt` by default.
+  - Configure CMake with `-DONNXRUNTIME_DIR=/opt/onnxruntime-trt`.
+- CLI example to load RNNT with preference for TensorRT, then CUDA, then CPU:
+  - `jaxie --ep TensorRT --ep CUDA --ep CPU --rnnt-load encoder.onnx predictor.onnx joint.onnx`
+
+### Live Device Test Flag
+
+The audio capture tests include an optional live device check. To require actual microphone capture and verify that callbacks are received, set the environment variable `JAXIE_AUDIO_DEVICE_TEST=1` when running tests. Example:
+
+- Bash:
+  - `docker run --rm -e JAXIE_AUDIO_DEVICE_TEST=1 -v "$(pwd):/starter_project" jaxie:latest bash -lc "ctest -C Release --test-dir /starter_project/build -L audio --output-on-failure"`
+- PowerShell:
+  - `docker run --rm -e JAXIE_AUDIO_DEVICE_TEST=1 -v "$PWD:/starter_project" jaxie:latest bash -lc "ctest -C Release --test-dir /starter_project/build -L audio --output-on-failure"`
+
+If this variable is not set, the audio tests run in a device-optional mode and will pass without a live audio device.

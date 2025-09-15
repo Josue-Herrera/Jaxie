@@ -189,4 +189,40 @@ ctest -C Debug
 cd ../
 ```
 
+### ONNX Runtime and Miniaudio Defaults
 
+Both Miniaudio and ONNX Runtime are enabled by default. Miniaudio is header-only and fetched automatically.
+
+ONNX Runtime is enabled by default, and the build will attempt to auto-discover it. If it cannot be found, the build will emit a warning and continue without ORT support (CPU-only stubs). To make ORT available, provide one of the hints below so CMake can locate the headers and library:
+
+- Cache variables (recommended with CMake GUIs or presets):
+  - `-DONNXRUNTIME_DIR=/path/to/onnxruntime` (prefix that contains `include` and `lib`/`lib64`)
+  - or `-DONNXRUNTIME_INCLUDE_DIR=/path/to/onnxruntime/include`
+  - and `-DONNXRUNTIME_LIB_DIR=/path/to/onnxruntime/lib` (or `lib64`)
+  - or `-DONNXRUNTIME_LIBRARY=/path/to/onnxruntime/lib/onnxruntime.lib` (Windows) or `libonnxruntime.so`/`dylib` (Linux/macOS)
+
+- Environment variables:
+  - `ONNXRUNTIME_DIR` or `ONNXRUNTIME_ROOT`
+
+Example (Linux/macOS/WSL):
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DONNXRUNTIME_DIR="/opt/onnxruntime"
+```
+
+Windows: set `ONNXRUNTIME_DIR` (or `ONNXRUNTIME_INCLUDE_DIR` and `ONNXRUNTIME_LIB_DIR`) to point to the extracted NuGet or SDK location containing `include` and `lib`.
+
+If ONNX Runtime is not found, the build gracefully falls back without failing.
+
+#### Windows NuGet (quick mapping)
+
+If you install `Microsoft.ML.OnnxRuntime.Gpu.Windows` or `Microsoft.ML.OnnxRuntime` via NuGet and extract the `.nupkg`:
+
+- Set includes to the NuGet `build/native/include` folder:
+  - `-DONNXRUNTIME_INCLUDE_DIR="C:/path/to/nuget/build/native/include"`
+- Set libraries to the appropriate runtime folder, typically:
+  - CPU: `-DONNXRUNTIME_LIB_DIR="C:/path/to/nuget/runtimes/win-x64/native"`
+  - CUDA EP packages may include provider DLLs in additional subfolders; for linking the C API use the `onnxruntime.lib` under the native folder above.
+
+Alternatively, set `ONNXRUNTIME_DIR` to a directory where you’ve created `include/` and `lib/` subfolders pointing to those NuGet locations.

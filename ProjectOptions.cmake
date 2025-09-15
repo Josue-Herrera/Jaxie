@@ -180,6 +180,18 @@ macro(Jaxie_local_options)
     ${Jaxie_ENABLE_SANITIZER_THREAD}
     ${Jaxie_ENABLE_SANITIZER_MEMORY})
 
+  # When building with clang-cl + Ninja on Windows, ensure the correct CRT
+  # default libraries are pulled in explicitly. This avoids toolchain/env
+  # mismatches that can surface as unresolved mainCRTStartup or x86 CRT picks.
+  if (MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_link_options(Jaxie_options INTERFACE
+      
+      #"/defaultlib:vcruntimed"
+      #"/defaultlib:ucrtd"
+      #"/defaultlib:msvcrtd"
+    )
+  endif()
+
   set_target_properties(Jaxie_options PROPERTIES UNITY_BUILD ${Jaxie_ENABLE_UNITY_BUILD})
 
   if(Jaxie_ENABLE_PCH)

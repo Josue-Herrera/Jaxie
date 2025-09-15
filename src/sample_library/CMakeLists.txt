@@ -12,7 +12,7 @@ target_link_libraries(sample_library PRIVATE Jaxie_options Jaxie_warnings)
 target_include_directories(sample_library ${WARNING_GUARD} PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
                                                                   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>)
 
-target_compile_features(sample_library PUBLIC cxx_std_20)
+target_compile_features(sample_library PUBLIC cxx_std_23)
 
 set_target_properties(
   sample_library

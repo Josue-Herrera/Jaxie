@@ -1,0 +1,49 @@
+# Jetson (L4T) development image for Jaxie
+# Defaults target Ubuntu 20.04 on Jetson (JetPack 5/6 era)
+
+ARG BASE_IMAGE="nvcr.io/nvidia/l4t-base:r35.4.1"
+FROM ${BASE_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+      software-properties-common wget curl ca-certificates gnupg apt-utils file zip \
+      build-essential make ninja-build git pkg-config \
+      python3 python3-pip \
+      cmake \
+      libasound2 pulseaudio-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+# Optional dev tools
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+      clang-tidy cppcheck ccache && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install ONNX Runtime (aarch64 CPU by default)
+ARG ORT_VERSION="1.18.0"
+ARG ORT_FLAVOR="cpu"   # cpu|gpu (gpu requires custom builds on Jetson; cpu works out-of-box)
+ARG ARCH="aarch64"
+RUN set -eux; \
+    URL_BASE="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"; \
+    case "${ORT_FLAVOR}-${ARCH}" in \
+      cpu-aarch64) ORT_PKG="onnxruntime-linux-aarch64-${ORT_VERSION}.tgz" ;; \
+      cpu-x64) ORT_PKG="onnxruntime-linux-x64-${ORT_VERSION}.tgz" ;; \
+      *) echo "Unsupported combo for Jetson: ${ORT_FLAVOR}-${ARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -q -O /tmp/onnxruntime.tgz "${URL_BASE}/${ORT_PKG}"; \
+    mkdir -p /opt/onnxruntime; \
+    tar -xzf /tmp/onnxruntime.tgz -C /opt/onnxruntime; \
+    rm -f /tmp/onnxruntime.tgz; \
+    ORT_DIR_NAME=$(ls /opt/onnxruntime | head -1); \
+    ln -s "/opt/onnxruntime/${ORT_DIR_NAME}" /opt/onnxruntime/current || true
+ENV ONNXRUNTIME_DIR=/opt/onnxruntime/current
+
+# Default compilers
+ENV CC=gcc
+ENV CXX=g++
+
+# Placeholders matching the other image layout.
+WORKDIR /starter_project
+CMD ["/bin/bash"]

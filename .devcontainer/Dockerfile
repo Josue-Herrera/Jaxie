@@ -1,6 +1,8 @@
 # [Choice] bionic (18.04), focal (20.04)
 ARG VARIANT="focal"
-FROM ubuntu:${VARIANT}
+# Optional base override to enable CUDA images, e.g., nvidia/cuda:12.2.2-cudnn8-devel-ubuntu20.04
+ARG BASE_IMAGE="ubuntu:${VARIANT}"
+FROM ${BASE_IMAGE}
 
 # Restate the variant to use it later on in the llvm and cmake installations
 ARG VARIANT
@@ -11,7 +13,8 @@ RUN apt-get update -qq && export DEBIAN_FRONTEND=noninteractive && \
         software-properties-common wget apt-utils file zip \
         openssh-client gpg-agent socat rsync \
         make ninja-build git \
-        python3 python3-pip
+        python3 python3-pip \
+        libasound2 pulseaudio-utils
 
 # Install conan
 RUN python3 -m pip install --upgrade pip setuptools && \
@@ -104,6 +107,30 @@ RUN ln -s $(readlink -f /usr/lib/clang/${LLVM_VER}/include) \
 RUN apt-get autoremove -y && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Install ONNX Runtime into /opt/onnxruntime and expose ONNXRUNTIME_DIR
+# Args:
+#  - ORT_VERSION: onnxruntime release version
+#  - ORT_FLAVOR:  cpu|gpu (gpu requires CUDA libs in base image)
+#  - ARCH:        x64|aarch64
+ARG ORT_VERSION="1.18.0"
+ARG ORT_FLAVOR="cpu"
+ARG ARCH="x64"
+RUN set -eux; \
+    URL_BASE="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"; \
+    case "${ORT_FLAVOR}-${ARCH}" in \
+      cpu-x64)    ORT_PKG="onnxruntime-linux-x64-${ORT_VERSION}.tgz" ;; \
+      gpu-x64)    ORT_PKG="onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz" ;; \
+      cpu-aarch64) ORT_PKG="onnxruntime-linux-aarch64-${ORT_VERSION}.tgz" ;; \
+      *) echo "Unsupported ORT_FLAVOR/ARCH combo: ${ORT_FLAVOR}-${ARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -q -O /tmp/onnxruntime.tgz "${URL_BASE}/${ORT_PKG}"; \
+    mkdir -p /opt/onnxruntime; \
+    tar -xzf /tmp/onnxruntime.tgz -C /opt/onnxruntime; \
+    rm -f /tmp/onnxruntime.tgz; \
+    ORT_DIR_NAME=$(tar -tzf /opt/onnxruntime/* | head -1 | cut -d/ -f1); \
+    ln -s "/opt/onnxruntime/${ORT_DIR_NAME}" /opt/onnxruntime/current || true
+ENV ONNXRUNTIME_DIR=/opt/onnxruntime/current
+
 # Allow the user to set compiler defaults
 ARG USE_CLANG
 # if --build-arg USE_CLANG=1, set CC to 'clang' or set to null otherwise.
@@ -114,7 +141,7 @@ ENV CC=${CC:-"gcc"}
 ENV CXX=${CXX:-"g++"}
 
 # Include project
-#ADD . /workspaces/cpp_starter_project
-#WORKDIR /workspaces/cpp_starter_project
+ADD . /workspaces/cpp_starter_project
+WORKDIR /workspaces/cpp_starter_project
 
 CMD ["/bin/bash"]

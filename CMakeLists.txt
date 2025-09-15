@@ -34,6 +34,10 @@ Jaxie_setup_dependencies()
 
 Jaxie_local_options()
 
+# Feature toggles for optional components (default ON; will gracefully degrade if missing)
+option(JAXIE_USE_MINIAUDIO "Enable miniaudio-backed capture" ON)
+option(JAXIE_USE_ONNXRUNTIME "Enable ONNX Runtime RNNT" ON)
+
 # don't know if this should be set globally from here or not...
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
@@ -92,7 +96,7 @@ if(MSVC)
 endif()
 
 # set the startup project for the "play" button in MSVC
-set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT intro)
+set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT jaxie)
 
 if(CMAKE_SKIP_INSTALL_RULES)
   return()
@@ -104,7 +108,6 @@ include(cmake/PackageProject.cmake)
 # we know we want to ship
 Jaxie_package_project(
   TARGETS
-  intro
   Jaxie_options
   Jaxie_warnings
   # FIXME: this does not work! CK

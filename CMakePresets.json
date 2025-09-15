@@ -14,6 +14,31 @@
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "installDir": "${sourceDir}/out/install/${presetName}"
         },
+      {
+        "name": "windows-clang-debug-vs",
+        "displayName": "clang Debug (VS)",
+        "description": "Target Windows with clang-cl via Visual Studio generator, Debug config",
+        "inherits": "conf-windows-common",
+        "generator": "Visual Studio 17 2022",
+        "binaryDir": "${sourceDir}/out/build/${presetName}",
+        "installDir": "${sourceDir}/out/install/${presetName}",
+        "architecture": {
+          "value": "x64",
+          "strategy": "external"
+        },
+        "toolset": {
+          "value": "ClangCL",
+          "strategy": "external"
+        },
+        "cacheVariables": {
+          "CMAKE_BUILD_TYPE": "Debug"
+        },
+        "vendor": {
+          "microsoft.com/VisualStudioSettings/CMake/1.0": {
+            "intelliSenseMode": "windows-clang-x64"
+          }
+        }
+      },
         {
             "name": "conf-windows-common",
             "description": "Windows settings for MSBuild toolchain that apply to msvc and clang",

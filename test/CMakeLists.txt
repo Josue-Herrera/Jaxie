@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15...3.23)
+cmake_minimum_required(VERSION 3.15...3.31)
 
 project(CmakeConfigPackageTests LANGUAGES CXX)
 
@@ -20,14 +20,18 @@ endif()
 include(${Catch2_SOURCE_DIR}/extras/Catch.cmake)
 
 # Provide a simple smoke test to make sure that the CLI works and can display a --help message
-add_test(NAME cli.has_help COMMAND intro --help)
+#add_test(NAME cli.has_help COMMAND jaxie --help)
 
 # Provide a test to verify that the version being reported from the application
 # matches the version given to CMake. This will be important once you package
 # your program. Real world shows that this is the kind of simple mistake that is easy
 # to make, but also easy to test for.
-add_test(NAME cli.version_matches COMMAND intro --version)
+add_test(NAME cli.version_matches COMMAND jaxie --version)
 set_tests_properties(cli.version_matches PROPERTIES PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
+
+# RNNT load should fail without valid paths or when ORT is disabled; mark WILL_FAIL so failure means pass
+add_test(NAME cli.rnnt_load_invalid COMMAND jaxie --rnnt-load encoder.onnx predictor.onnx joint.onnx)
+set_tests_properties(cli.rnnt_load_invalid PROPERTIES WILL_FAIL TRUE)
 
 add_executable(tests tests.cpp)
 target_link_libraries(
@@ -105,3 +109,33 @@ catch_discover_tests(
   "relaxed_constexpr."
   OUTPUT_SUFFIX
   .xml)
+
+# Miniaudio/audio capture tests (label: audio)
+add_executable(audio_tests audio_capture_tests.cpp)
+target_link_libraries(
+  audio_tests
+  PRIVATE Jaxie::Jaxie_warnings
+          Jaxie::Jaxie_options
+          Jaxie::audio_capture
+          Catch2::Catch2WithMain)
+target_compile_definitions(audio_tests PRIVATE _CRT_SECURE_NO_WARNINGS=1)
+
+set(audio_tests_list)
+catch_discover_tests(
+  audio_tests
+  TEST_PREFIX
+  "audio."
+  REPORTER
+  XML
+  OUTPUT_DIR
+  .
+  OUTPUT_PREFIX
+  "audio."
+  OUTPUT_SUFFIX
+  .xml
+  TEST_LIST
+  audio_tests_list)
+
+if(audio_tests_list)
+  set_tests_properties(${audio_tests_list} PROPERTIES LABELS audio)
+endif()

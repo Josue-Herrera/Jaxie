@@ -32,12 +32,23 @@ function(Jaxie_setup_dependencies)
     cpmaddpackage("gh:CLIUtils/CLI11@2.5.0")
   endif()
 
-  if(NOT TARGET ftxui::screen)
-    cpmaddpackage("gh:ArthurSonzogni/FTXUI@6.0.2")
-  endif()
-
   if(NOT TARGET tools::tools)
     cpmaddpackage("gh:lefticus/tools#update_build_system")
+  endif()
+
+  # Miniaudio (single-header). Create an interface target when enabled.
+  if(JAXIE_USE_MINIAUDIO AND NOT TARGET miniaudio::miniaudio)
+    CPMAddPackage(
+      NAME miniaudio
+      GITHUB_REPOSITORY mackron/miniaudio
+      GIT_TAG 0.11.21
+      DOWNLOAD_ONLY YES)
+    if(miniaudio_ADDED)
+      add_library(miniaudio INTERFACE)
+      # Expose the fetched directory so consumers can include <miniaudio.h>
+      target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
+      add_library(miniaudio::miniaudio ALIAS miniaudio)
+    endif()
   endif()
 
 endfunction()
