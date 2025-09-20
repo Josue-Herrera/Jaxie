@@ -1,132 +1,237 @@
 #include <Jaxie/onnx/streaming_rnnt.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
 
 #if defined(JAXIE_USE_ONNXRUNTIME)
 #include <onnxruntime_cxx_api.h>
-#include <memory>
-#include <string>
-
-struct streaming_rnnt_impl_core {
-  Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "jaxie"};
-  Ort::SessionOptions so{};
-  std::unique_ptr<Ort::Session> encoder;
-  std::unique_ptr<Ort::Session> predictor;
-  std::unique_ptr<Ort::Session> joint;
-};
 #endif
 
 namespace jaxie::onnx {
+namespace detail {
 
-streaming_rnnt::streaming_rnnt() = default;
+template <typename Backend>
+class rnnt_impl {
+public:
+  rnnt_impl() = default;
+  ~rnnt_impl() { backend_.unload(); }
 
-streaming_rnnt::~streaming_rnnt() {
+  rnnt_impl(const rnnt_impl&) = delete;
+  rnnt_impl& operator=(const rnnt_impl&) = delete;
+  rnnt_impl(rnnt_impl&&) = delete;
+  rnnt_impl& operator=(rnnt_impl&&) = delete;
+
+  bool load(const rnnt_model_paths& paths, const ep_prefs& prefs) noexcept {
+    backend_.unload();
+    loaded_ = backend_.load(paths, prefs);
+    return loaded_;
+  }
+
+  bool step(std::span<const float> audio_chunk, std::vector<int32_t>& emitted_tokens) const noexcept {
+    if (!loaded_) {
+      return false;
+    }
+    return backend_.step(audio_chunk, emitted_tokens);
+  }
+
+  void reset() noexcept { backend_.reset(); }
+
+  void unload() noexcept {
+    backend_.unload();
+    loaded_ = false;
+  }
+
+  bool is_loaded() const noexcept { return loaded_; }
+
+private:
+  mutable Backend backend_{};
+  bool loaded_{false};
+};
+
+struct null_rnnt_backend {
+  bool load(const rnnt_model_paths& paths, const ep_prefs& prefs) noexcept {
+    static_cast<void>(paths);
+    static_cast<void>(prefs);
+    load_attempted_ = true;
+    return false;
+  }
+
+  bool step(std::span<const float> audio_chunk, std::vector<int32_t>& emitted_tokens) const noexcept {
+    static_cast<void>(audio_chunk);
+    static_cast<void>(emitted_tokens);
+    if (load_attempted_) {
+      return false;
+    }
+    return false;
+  }
+
+  void reset() noexcept { load_attempted_ = false; }
+
+  void unload() noexcept { load_attempted_ = false; }
+
+private:
+  mutable bool load_attempted_{false};
+};
+
 #if defined(JAXIE_USE_ONNXRUNTIME)
-  delete reinterpret_cast<streaming_rnnt_impl_core*>(pimpl_);
-  pimpl_ = nullptr;
-#endif
+
+class onnx_rnnt_backend {
+public:
+  onnx_rnnt_backend();
+  ~onnx_rnnt_backend();
+
+  bool load(const rnnt_model_paths& paths, const ep_prefs& prefs) noexcept;
+  bool step(std::span<const float> audio_chunk, std::vector<int32_t>& emitted_tokens) const noexcept;
+  void reset() noexcept;
+  void unload() noexcept;
+
+private:
+  void append_execution_providers(Ort::SessionOptions& options, const ep_prefs& prefs);
+
+  Ort::Env env_;
+  std::unique_ptr<Ort::Session> encoder_{};
+  std::unique_ptr<Ort::Session> predictor_{};
+  std::unique_ptr<Ort::Session> joint_{};
+};
+
+onnx_rnnt_backend::onnx_rnnt_backend()
+  : env_(ORT_LOGGING_LEVEL_WARNING, "jaxie") {}
+
+onnx_rnnt_backend::~onnx_rnnt_backend() { unload(); }
+
+bool onnx_rnnt_backend::load(const rnnt_model_paths& paths, const ep_prefs& prefs) noexcept {
+  unload();
+
+  Ort::SessionOptions options{};
+  append_execution_providers(options, prefs);
+
+  try {
+    encoder_ = std::make_unique<Ort::Session>(env_, paths.encoder.c_str(), options);
+    predictor_ = std::make_unique<Ort::Session>(env_, paths.predictor.c_str(), options);
+    joint_ = std::make_unique<Ort::Session>(env_, paths.joint.c_str(), options);
+  } catch (...) {
+    unload();
+    return false;
+  }
+
+  return true;
 }
 
-streaming_rnnt::streaming_rnnt(streaming_rnnt&& other) noexcept { *this = std::move(other); }
+bool onnx_rnnt_backend::step(std::span<const float> audio_chunk, std::vector<int32_t>& emitted_tokens) const noexcept {
+  static_cast<void>(audio_chunk);
+  if (encoder_ == nullptr || predictor_ == nullptr || joint_ == nullptr) {
+    return false;
+  }
+
+  // TODO: Implement RNNT step once model IOs are finalized.
+  emitted_tokens.clear();
+  return true;
+}
+
+void onnx_rnnt_backend::reset() noexcept {
+  // TODO: reset internal caches when RNNT state handling is implemented.
+}
+
+void onnx_rnnt_backend::unload() noexcept {
+  encoder_.reset();
+  predictor_.reset();
+  joint_.reset();
+}
+
+void onnx_rnnt_backend::append_execution_providers(Ort::SessionOptions& options, const ep_prefs& prefs) {
+  for (const auto& provider : prefs.providers) {
+    if (provider == "TensorRT" || provider == "Tensorrt" || provider == "TRT") {
+#if defined(ORT_API_VERSION)
+      try {
+        OrtTensorRTProviderOptionsV2 trt_options{};
+        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_TensorRT_V2(options, &trt_options));
+      } catch (...) {
+        // Ignore failures and fall back to next provider.
+      }
+#endif
+    } else if (provider == "CUDA" || provider == "Cuda") {
+      try {
+        OrtCUDAProviderOptions cuda_options{};
+        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(options, &cuda_options));
+      } catch (...) {
+        // Ignore failures; ONNX Runtime will fall back to CPU.
+      }
+    } else if (provider == "CPU" || provider == "Cpu") {
+      // CPU is the default provider; nothing to append.
+    }
+  }
+}
+
+#endif // defined(JAXIE_USE_ONNXRUNTIME)
+
+#if defined(JAXIE_USE_ONNXRUNTIME)
+using selected_backend = onnx_rnnt_backend;
+#else
+using selected_backend = null_rnnt_backend;
+#endif
+
+} // namespace detail
+
+struct streaming_rnnt::impl : detail::rnnt_impl<detail::selected_backend> {
+  using base = detail::rnnt_impl<detail::selected_backend>;
+  using base::base;
+};
+
+streaming_rnnt::streaming_rnnt() = default;
+streaming_rnnt::~streaming_rnnt() = default;
+
+streaming_rnnt::streaming_rnnt(streaming_rnnt&& other) noexcept
+  : pimpl_(std::move(other.pimpl_)), loaded_(other.loaded_) {
+  other.loaded_ = false;
+}
 
 streaming_rnnt& streaming_rnnt::operator=(streaming_rnnt&& other) noexcept {
   if (this == &other) {
     return *this;
   }
-#if defined(JAXIE_USE_ONNXRUNTIME)
-  // Clean up existing owned state before taking other's
-  delete reinterpret_cast<streaming_rnnt_impl_core*>(pimpl_);
-  pimpl_ = other.pimpl_;
-  other.pimpl_ = nullptr;
-#endif
+
+  pimpl_ = std::move(other.pimpl_);
   loaded_ = other.loaded_;
   other.loaded_ = false;
   return *this;
 }
 
 bool streaming_rnnt::load(const rnnt_model_paths& paths, const ep_prefs& prefs) noexcept {
-#if defined(JAXIE_USE_ONNXRUNTIME)
-  // Clean up any existing state
-  delete reinterpret_cast<streaming_rnnt_impl_core*>(pimpl_);
-  pimpl_ = nullptr;
-
-  auto* core = new (std::nothrow) streaming_rnnt_impl_core();
-  if (core == nullptr) {
-    loaded_ = false;
-    return false;
-  }
-
-  // Execution Provider order preference (best-effort)
-  for (const auto& prov : prefs.providers) {
-    if (prov == "TensorRT" || prov == "Tensorrt" || prov == "TRT") {
-#ifdef ORT_API_VERSION
-      // If built with TensorRT EP available; otherwise this call is a no-op at link-time.
-      // Some builds expose provider-specific appenders; keep this guarded to avoid link errors.
-      // Ort::ThrowOnError is not used here; we ignore failures and continue to next EP.
-      try {
-        OrtTensorRTProviderOptionsV2 trt_opts{};
-        // Use defaults for now.
-        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_TensorRT_V2(core->so, &trt_opts));
-      } catch (...) {
-        // ignore, fallback to next
-      }
-#endif
-    } else if (prov == "CUDA" || prov == "Cuda") {
-      try {
-        OrtCUDAProviderOptions cuda_opts{};
-        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(core->so, &cuda_opts));
-      } catch (...) {
-        // ignore
-      }
-    } else if (prov == "CPU" || prov == "Cpu") {
-      // CPU is default; no need to append explicitly.
+  if (!pimpl_) {
+    try {
+      pimpl_ = std::make_unique<impl>();
+    } catch (...) {
+      loaded_ = false;
+      return false;
     }
   }
 
-  try {
-    core->encoder = std::make_unique<Ort::Session>(core->env, paths.encoder.c_str(), core->so);
-    core->predictor = std::make_unique<Ort::Session>(core->env, paths.predictor.c_str(), core->so);
-    core->joint = std::make_unique<Ort::Session>(core->env, paths.joint.c_str(), core->so);
-  } catch (...) {
-    delete core;
+  if (!pimpl_->load(paths, prefs)) {
     loaded_ = false;
     return false;
   }
 
-  pimpl_ = reinterpret_cast<impl*>(core);
   loaded_ = true;
   return true;
-#else
-  (void)paths;
-  (void)prefs;
-  loaded_ = false;
-  return false;
-#endif
 }
 
 bool streaming_rnnt::step(std::span<const float> audio_chunk, std::vector<int32_t>& emitted_tokens) const noexcept {
-  (void)audio_chunk;
-  (void)emitted_tokens;
-  if (!loaded_) {
+  if (!loaded_ || !pimpl_) {
     return false;
   }
-#if defined(JAXIE_USE_ONNXRUNTIME)
-  // TODO: run encoder, predictor, joint; update states; fill out_tokens
-  emitted_tokens.clear();
-  return true;
-#else
-  return false;
-#endif
+
+  return pimpl_->step(audio_chunk, emitted_tokens);
 }
 
 void streaming_rnnt::reset_state() noexcept {
-#if defined(JAXIE_USE_ONNXRUNTIME)
-  // TODO: reset cached states
-#endif
-}
+  if (!pimpl_) {
+    return;
+  }
 
+  pimpl_->reset();
+}
 
 } // namespace jaxie::onnx

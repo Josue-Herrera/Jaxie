@@ -24,3 +24,5 @@ target_link_system_libraries(
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_BINARY_DIR}/configured_files/include")
+
+jaxie_propagate_windows_asan_runtime(${PROJECT_NAME})

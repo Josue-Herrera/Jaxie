@@ -89,9 +89,12 @@ RUN mkdir -p ${IWYU_BUILD} && \
     git clone --branch clang_${LLVM_VER} \
         https://github.com/include-what-you-use/include-what-you-use.git \
         ${IWYU_SRC}
+# Force compatibility with IWYU's older cmake_minimum_required declaration.
 RUN CC=clang-${LLVM_VER} CXX=clang++-${LLVM_VER} cmake -S ${IWYU_SRC} \
         -B ${IWYU_BUILD} \
-        -G "Unix Makefiles" -DCMAKE_PREFIX_PATH=/usr/lib/llvm-${LLVM_VER} && \
+        -G "Unix Makefiles" \
+        -DCMAKE_PREFIX_PATH=/usr/lib/llvm-${LLVM_VER} \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     cmake --build ${IWYU_BUILD} -j && \
     cmake --install ${IWYU_BUILD}
 

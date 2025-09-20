@@ -45,13 +45,8 @@ private:
   bool initialized_{false};
   bool started_{false};
 
-#if defined(JAXIE_USE_MINIAUDIO)
   struct impl;
   std::unique_ptr<impl> pimpl_{};
-#else
-  // Stub state for builds without miniaudio
-  // We simulate a device that cannot start.
-#endif
 };
 
 } // namespace jaxie::audio

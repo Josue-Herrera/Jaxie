@@ -6,6 +6,26 @@ include(CheckCXXCompilerFlag)
 
 include(CheckCXXSourceCompiles)
 
+function(jaxie_propagate_windows_asan_runtime target)
+  if(NOT MSVC)
+    return()
+  endif()
+  if(NOT Jaxie_ENABLE_SANITIZER_ADDRESS)
+    return()
+  endif()
+  if(NOT DEFINED JAXIE_ASAN_RUNTIME_DLL OR NOT JAXIE_ASAN_RUNTIME_DLL)
+    message(WARNING "AddressSanitizer runtime is not available; target ${target} may fail to launch.")
+    return()
+  endif()
+
+  add_custom_command(
+    TARGET ${target}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${JAXIE_ASAN_RUNTIME_DLL}"
+            $<TARGET_FILE_DIR:${target}>)
+endfunction()
+
 
 macro(Jaxie_supports_sanitizers)
   if((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND NOT WIN32)
@@ -179,6 +199,31 @@ macro(Jaxie_local_options)
     ${Jaxie_ENABLE_SANITIZER_UNDEFINED}
     ${Jaxie_ENABLE_SANITIZER_THREAD}
     ${Jaxie_ENABLE_SANITIZER_MEMORY})
+
+  if(MSVC AND Jaxie_ENABLE_SANITIZER_ADDRESS AND NOT JAXIE_ASAN_RUNTIME_DLL)
+    get_filename_component(_jaxie_cl_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_jaxie_asan_candidates "${_jaxie_cl_dir}/clang_rt.asan_dynamic-x86_64.dll")
+
+    if(DEFINED ENV{VSINSTALLDIR})
+      list(APPEND _jaxie_asan_candidates
+        "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/bin/clang_rt.asan_dynamic-x86_64.dll")
+
+      file(GLOB _jaxie_llvm_runtime_candidates
+           "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/lib/clang/*/lib/windows/clang_rt.asan_dynamic-x86_64.dll")
+      list(APPEND _jaxie_asan_candidates ${_jaxie_llvm_runtime_candidates})
+    endif()
+
+    foreach(_candidate IN LISTS _jaxie_asan_candidates)
+      if(EXISTS "${_candidate}")
+        set(JAXIE_ASAN_RUNTIME_DLL "${_candidate}" CACHE INTERNAL "Resolved AddressSanitizer runtime" FORCE)
+        break()
+      endif()
+    endforeach()
+
+    if(NOT JAXIE_ASAN_RUNTIME_DLL)
+      message(WARNING "Unable to locate clang_rt.asan_dynamic-x86_64.dll; sanitize-enabled binaries may not run.")
+    endif()
+  endif()
 
   # When building with clang-cl + Ninja on Windows, ensure the correct CRT
   # default libraries are pulled in explicitly. This avoids toolchain/env

@@ -40,12 +40,8 @@ public:
   void reset_state() noexcept; // clear caches/hidden states between utterances
 
 private:
-#if defined(JAXIE_USE_ONNXRUNTIME)
   struct impl;
-  impl* pimpl_{}; // allocated in .cpp where ORT headers are available
-#else
-  // Stub for builds without ONNX Runtime
-#endif
+  std::unique_ptr<impl> pimpl_{};
   bool loaded_{false};
 };
 

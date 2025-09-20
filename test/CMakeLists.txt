@@ -41,6 +41,8 @@ target_link_libraries(
           Jaxie::sample_library
           Catch2::Catch2WithMain)
 
+jaxie_propagate_windows_asan_runtime(tests)
+
 if(WIN32 AND BUILD_SHARED_LIBS)
   add_custom_command(
     TARGET tests
@@ -73,6 +75,8 @@ target_link_libraries(
           Jaxie::sample_library
           Catch2::Catch2WithMain)
 
+jaxie_propagate_windows_asan_runtime(constexpr_tests)
+
 catch_discover_tests(
   constexpr_tests
   TEST_PREFIX
@@ -97,6 +101,8 @@ target_link_libraries(
           Catch2::Catch2WithMain)
 target_compile_definitions(relaxed_constexpr_tests PRIVATE -DCATCH_CONFIG_RUNTIME_STATIC_REQUIRE)
 
+jaxie_propagate_windows_asan_runtime(relaxed_constexpr_tests)
+
 catch_discover_tests(
   relaxed_constexpr_tests
   TEST_PREFIX
@@ -119,6 +125,8 @@ target_link_libraries(
           Jaxie::audio_capture
           Catch2::Catch2WithMain)
 target_compile_definitions(audio_tests PRIVATE _CRT_SECURE_NO_WARNINGS=1)
+
+jaxie_propagate_windows_asan_runtime(audio_tests)
 
 set(audio_tests_list)
 catch_discover_tests(

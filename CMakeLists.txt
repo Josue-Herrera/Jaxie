@@ -29,14 +29,15 @@ include(ProjectOptions.cmake)
 Jaxie_setup_options()
 
 Jaxie_global_options()
-include(Dependencies.cmake)
-Jaxie_setup_dependencies()
-
-Jaxie_local_options()
 
 # Feature toggles for optional components (default ON; will gracefully degrade if missing)
 option(JAXIE_USE_MINIAUDIO "Enable miniaudio-backed capture" ON)
 option(JAXIE_USE_ONNXRUNTIME "Enable ONNX Runtime RNNT" ON)
+
+include(Dependencies.cmake)
+Jaxie_setup_dependencies()
+
+Jaxie_local_options()
 
 # don't know if this should be set globally from here or not...
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
